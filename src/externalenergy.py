@@ -6,6 +6,7 @@ import numpy as np
 from scipy.linalg import norm
 import math
 from configuration import DEF_SCALESPACEDEPTH
+from msgradients import *
 
 class ExternalEnergy(object):
     """
@@ -175,12 +176,12 @@ class GradientMagnitudeEnergy(ExternalEnergy):
         scales = []
         print 'computing image with sigma_base=%s' % sigma_base
         #
-        vigra.impex.writeImage(self.image, '/home/max/workspace/SnakeIsland/resources/images/scalespace_orig.png')
+        #vigra.impex.writeImage(self.image, '/home/max/workspace/SnakeIsland/resources/images/scalespace_orig.png')
         #
         ggm_image = vigra.filters.gaussianGradientMagnitude(self.image, sigma_base)
         ggm_image = vigra.colors.linearRangeMapping(ggm_image)
         #
-        vigra.impex.writeImage(ggm_image, '/home/max/workspace/SnakeIsland/resources/images/scalespace_%s.png' % sigma_base)
+        #vigra.impex.writeImage(ggm_image, '/home/max/workspace/SnakeIsland/resources/images/scalespace_%s.png' % sigma_base)
         #
         scalespace.append(ggm_image)
         scales.append(sigma_base)
@@ -193,7 +194,7 @@ class GradientMagnitudeEnergy(ExternalEnergy):
             scalespace.append(gs_image)
             scales.append(sigma)
             #
-            vigra.impex.writeImage(gs_image, '/home/max/workspace/SnakeIsland/resources/images/scalespace_%s.png' % sigma)
+            #vigra.impex.writeImage(gs_image, '/home/max/workspace/SnakeIsland/resources/images/scalespace_%s.png' % sigma)
             #
         scalespace = np.array(scalespace)   
         return scalespace, scales
@@ -350,3 +351,106 @@ class GradientDirectionEnergy(ExternalEnergy):
     def maximum(self):
         # the max energy is the highest intensity value present in the image
         return 30000.0#255.0**2
+    
+class MSGradientMagnitudeEnergy(ExternalEnergy):
+    """
+        This a subclass of ExternalEnergy and computes the multi spectral external energy
+        upon the magnitude of the gaussian image gradient.
+        A scale space is generated regarding sigma of the gaussian gradient filter.
+    """
+    
+    def __init__(self, *args, **kwargs):
+        print 'initialising external energy (MSGradientMagnitudeEnergy)'
+        # super init
+        super(MSGradientMagnitudeEnergy, self).__init__(*args, **kwargs)
+        import time
+        start = time.time()
+        # scale space depth
+        self.resolution = DEF_SCALESPACEDEPTH
+        # build the scale space
+        self.scalespace, self.scales = self.buildScaleSpace(resolution=self.resolution)
+        print 'done (after %s s)' % (time.time()-start)
+        
+    def buildScaleSpace(self, sigma_base=6.0, resolution=10):
+        print 'building scale space'
+        # create scale space
+        scalespace = []
+        scales = []
+        print 'computing image with sigma_base=%s' % sigma_base
+        #
+        #vigra.impex.writeImage(self.image, '/home/max/workspace/SnakeIsland/resources/images/scalespace_orig.png')
+        #
+        ggm_image = msMaxGradient(msGaussianGradient(self.image, sigma_base))
+        #ggm_image = vigra.colors.linearRangeMapping(ggm_image)
+        #
+        #vigra.impex.writeImage(ggm_image, '/home/max/workspace/SnakeIsland/resources/images/scalespace_%s.png' % sigma_base)
+        #
+        scalespace.append(ggm_image)
+        scales.append(sigma_base)
+        #sigma_base = sigma_base/2
+        for i in range(1, resolution):
+            sigma = i*sigma_base+sigma_base
+            print 'computing image with sigma=%s' % sigma
+            gs_image = msMaxGradient(msGaussianGradient(ggm_image, sigma))
+            #gs_image = vigra.colors.linearRangeMapping(gs_image)
+            scalespace.append(gs_image)
+            scales.append(sigma)
+            #
+            #vigra.impex.writeImage(gs_image, '/home/max/workspace/SnakeIsland/resources/images/scalespace_%s.png' % sigma)
+            #
+        scalespace = np.array(scalespace)   
+        return scalespace, scales
+    
+    def stepsize(self, iteration=None):
+        if iteration == None:
+            return 8
+        index = self.scaleIndex(iteration)
+        return int(self.scales[index])
+        
+    def scalestep(self, iteration):
+        """
+            Returns True if the current iteration is the first on a new image
+            regarding the scale space. Helps to deal with the situation when
+            a new image from the scale space is subject to energy computation.
+        """
+        iterations = iteration[0]
+        current_iter = iteration[1]
+        if self.scaleIndex(iteration) != self.scaleIndex((iterations, current_iter-1)):
+            return True
+        return False
+    
+    def scaleIndex(self, iteration):
+        """
+            Returns the index of the resolution space regarding the given iteration-tuple.
+        """
+        iterations = iteration[0]
+        current_iter = iteration[1]
+        # the scale space has to be spread out over the number of iterations
+        v = iterations/self.resolution
+        if  v == 0:
+            miniscale = np.linspace(0, self.resolution-1, iterations)
+            index = miniscale[current_iter - 1]
+        else:
+            index = (self.resolution - 1) - (current_iter - 1)/v
+        if index == -1:
+            return 0
+        return index    
+    
+    def energy(self, x, y, iteration=None, normal=None):
+        # if no iteration tuple is provided
+        if iteration is None:
+            # return the inverted energy
+            ggm_image = self.scalespace[-1]
+            return self.max-ggm_image[x][y]
+        
+        # iteration tuple is provided
+        index = self.scaleIndex(iteration)
+        # select the according image
+        ggm_image = self.scalespace[index]
+        # return the inverted energy
+        return self.max - ggm_image[x][y]**2
+        
+    def maximum(self):
+        # the max energy is the highest intensity value present in the image
+        return self.image.max()**2
+
