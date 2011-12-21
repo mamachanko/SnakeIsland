@@ -87,10 +87,11 @@ class SnakeIslandMainWindow(QMainWindow, Ui_MainWindow):
         imagefilename = DEF_IMAGE
         if os.path.lexists(imagefilename):
             print 'loading "%s"' % imagefilename
-        #    image = getImageByName(imagefilename = imagefilename,
-        #                           topleft = topleft,
-        #                           bottomright = bottomright,
-        #                           linearrangemapping = DEF_LRM)
+            # FOR SATELLITE IMAGES
+	    #image = getImageByName(imagefilename = imagefilename,
+            #                       topleft = topleft,
+            #                       bottomright = bottomright,
+            #                       linearrangemapping = DEF_LRM)
             # fetch map data
             self.geoimage = GeoImage(image = imagefilename)
             self.loadImage(imagefilename)
